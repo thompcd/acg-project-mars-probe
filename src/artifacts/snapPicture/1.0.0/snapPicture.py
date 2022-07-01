@@ -1,5 +1,6 @@
 
 from datetime import datetime
+from cv2 import *
 import time
 import traceback
 import json
@@ -7,7 +8,6 @@ import boto3
 import botocore
 import sys
 import os
-import picamera
 
 import awsiot.greengrasscoreipc
 import awsiot.greengrasscoreipc.client as client
@@ -17,7 +17,6 @@ from awsiot.greengrasscoreipc.model import (
     SubscribeToIoTCoreRequest,
     PublishToIoTCoreRequest
 )
-import Adafruit_DHT as dht
 
 # Setup some constants and pull command line args and environment variables.
 TIMEOUT = 10
@@ -26,7 +25,7 @@ REQUEST_TOPIC = sys.argv[2]
 RESPONSE_TOPIC = sys.argv[3]
 THING_NAME = os.getenv('AWS_IOT_THING_NAME', 'unknown')
 TEMP_PIC = '/tmp/snap.jpg'
-SENSOR_GPIO = 26
+CAM_PORT = 0
 
 ipc_client = awsiot.greengrasscoreipc.connect()
 
@@ -35,23 +34,20 @@ def take_picture():
     # Initiate the PiCam and try to snap a photo.  Note that you will get an error if you happen to access the PiCam from two places at once
     # such as if there is a new thread started for this program.  I have only run into it when one Python thread got stuck, but we could implement
     # some single-file queing if it becomes an issue.
+    picture_result = None
+    image = None
     try:
-        camera = picamera.PiCamera()
+        cam = VideoCapture(cam_port)
         time.sleep(2)
-        camera.capture(TEMP_PIC)
-        picture_result = "success"
+
+        # reading the input using the camera
+        picture_result, image = cam.read()
+        imwrite(TEMP_PIC, image)
     except Exception as e:
         print(e)
         picture_result = "failed"
     finally:
-        camera.close()
         return picture_result
-
-
-def get_temp():
-    h, t = dht.read_retry(dht.DHT22, SENSOR_GPIO)
-    return(round(t, 1), round(h, 1))
-
 
 def respond(event):
     # This is the main response function when we notice a message on the request topic.
@@ -62,13 +58,13 @@ def respond(event):
         image_url = upload_file(BUCKET, TEMP_PIC)
 
     # Get the temp and humidity from the sensor
-    t, h = get_temp()
+    # t, h = get_temp()
 
     response_message = {
         "timestamp": int(round(time.time() * 1000)),
         "image": image_url,
-        "temperature": "{} C".format(t),
-        "humidity": "{}%".format(h)
+        "temperature": "{} C".format(88),
+        "humidity": "{}%".format(70)
     }
 
     # Using the AWS IOT SDK to publish messages directly to AWS.  Using QOS=1 (AT_LEAST_ONCE) to have Greengrass queue up
